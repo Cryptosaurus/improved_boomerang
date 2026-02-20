@@ -360,6 +360,20 @@ int main() {
 
           
 #ifdef VERBOSE
+	  // Plaintext pair
+	  state P0 = {
+	    x[0] ^ (struc[i].i & 0xf000),
+	    x[1] ^ (struc[i].i & 0x0f00),
+	    x[2] ^ (struc[i].i & 0x00f0),
+	    x[3] ^ (struc[i].i & 0x000f)
+	  };
+	  state P1 = {
+	    x[0] ^ (struc[i-1].i & 0xf000),
+	    x[1] ^ (struc[i-1].i & 0x0f00),
+	    x[2] ^ (struc[i-1].i & 0x00f0),
+	    x[3] ^ (struc[i-1].i & 0x000f)
+	  };
+
 	  // Detect right pairs
 	  int right = 0;
 	  int right_m;
