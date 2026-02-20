@@ -377,7 +377,7 @@ candidates (*precompute_candidates())[4] {
     superbox_inv[i] = y[0];
   }
   
-  candidates (*p)[4] = calloc(1ULL<<(4*N), sizeof(p[0]));
+  candidates (*p)[1ULL<<(4*N)] = calloc(4, sizeof(p[0]));
   assert(p);
   // Stupid precomputation with complexity 1<<8*N
 #pragma omp parallel for
@@ -474,7 +474,7 @@ int main() {
   /* 6-round boomerang               */
   /***********************************/
 
-  candidates (*cand)[4] = precompute_candidates();
+  candidates (*cand)[1ULL<<(4*N)] = precompute_candidates();
 
   int cnt = 0, cnd = 0;
 
