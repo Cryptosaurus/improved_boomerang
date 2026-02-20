@@ -1,6 +1,5 @@
-CFLAGS = -Wall -Wextra -O3 -g -fopenmp -std=c99 -march=native
+CFLAGS = -Wall -Wextra -O3 -g -std=c99 -march=native -fopenmp
 
-# CFLAGS+= -Og
 # CFLAGS+= -fsanitize=address -O0
 # LDLIBS+= -lasan
 

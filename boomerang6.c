@@ -21,203 +21,15 @@
 #include <stdlib.h>
 #include <time.h>
 #include <assert.h>
+#include <sys/random.h>
 
 // #define VERBOSE
 
 #define tabsize(t) (sizeof(t)/sizeof((t)[0]))
 
-/***********************************/
-/* T-tables based AES              */
-/***********************************/
-
-#define N 4
-#define R 6
-
-typedef uint16_t word;
-#define MASK 0xf
-#define M0 0xf000
-#define M1 0xf00
-#define M2 0xf0
-#define M3 0xf
-#include "tables4.h"
-
-typedef word state[4];
-
-void AddKey(state x, state k) {
-  x[0] ^= k[0];
-  x[1] ^= k[1];
-  x[2] ^= k[2];
-  x[3] ^= k[3];
-}
-
-void  __attribute__((always_inline)) Round(state x, state y) {
-    y[0] = Te0[(x[0] >> (3*N)) & MASK] ^
-           Te1[(x[1] >> (2*N)) & MASK] ^
-           Te2[(x[2] >> (1*N)) & MASK] ^
-           Te3[(x[3] >> (0*N)) & MASK];
-    y[1] = Te0[(x[1] >> (3*N)) & MASK] ^
-           Te1[(x[2] >> (2*N)) & MASK] ^
-           Te2[(x[3] >> (1*N)) & MASK] ^
-           Te3[(x[0] >> (0*N)) & MASK];
-    y[2] = Te0[(x[2] >> (3*N)) & MASK] ^
-           Te1[(x[3] >> (2*N)) & MASK] ^
-           Te2[(x[0] >> (1*N)) & MASK] ^
-           Te3[(x[1] >> (0*N)) & MASK];
-    y[3] = Te0[(x[3] >> (3*N)) & MASK] ^
-           Te1[(x[0] >> (2*N)) & MASK] ^
-           Te2[(x[1] >> (1*N)) & MASK] ^
-           Te3[(x[2] >> (0*N)) & MASK];
-}
-
-void  __attribute__((always_inline)) RoundInv(state x, state y) {
-  y[0] = Td0[(x[0] >> (3*N)) & MASK] ^
-         Td1[(x[3] >> (2*N)) & MASK] ^
-         Td2[(x[2] >> (1*N)) & MASK] ^
-         Td3[(x[1] >> (0*N)) & MASK];
-  y[1] = Td0[(x[1] >> (3*N)) & MASK] ^
-         Td1[(x[0] >> (2*N)) & MASK] ^
-         Td2[(x[3] >> (1*N)) & MASK] ^
-         Td3[(x[2] >> (0*N)) & MASK];
-  y[2] = Td0[(x[2] >> (3*N)) & MASK] ^
-         Td1[(x[1] >> (2*N)) & MASK] ^
-         Td2[(x[0] >> (1*N)) & MASK] ^
-         Td3[(x[3] >> (0*N)) & MASK];
-  y[3] = Td0[(x[3] >> (3*N)) & MASK] ^
-         Td1[(x[2] >> (2*N)) & MASK] ^
-         Td2[(x[1] >> (1*N)) & MASK] ^
-         Td3[(x[0] >> (0*N)) & MASK];
-}
-
-void SRSB(state x) {
-  state y;
-  y[0] = (Te4[(x[0] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[1] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[2] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[3] >> (0*N)) & MASK] & M3);
-  y[1] = (Te4[(x[1] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[2] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[3] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[0] >> (0*N)) & MASK] & M3);
-  y[2] = (Te4[(x[2] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[3] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[0] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[1] >> (0*N)) & MASK] & M3);
-  y[3] = (Te4[(x[3] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[0] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[1] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[2] >> (0*N)) & MASK] & M3);
-  
-  memcpy(x, y, sizeof(state));
-}
-
-void SRSBInv(state x) {
-  state y;
-  y[0] = (Td4[(x[0] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[3] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[2] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[1] >> (0*N)) & MASK] & M3);
-  y[1] = (Td4[(x[1] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[0] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[3] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[2] >> (0*N)) & MASK] & M3);
-  y[2] = (Td4[(x[2] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[1] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[0] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[3] >> (0*N)) & MASK] & M3);
-  y[3] = (Td4[(x[3] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[2] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[1] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[0] >> (0*N)) & MASK] & M3);
-  
-  memcpy(x, y, sizeof(state));
-}
-
-void SB(state x) {
-  state y;
-  y[0] = (Te4[(x[0] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[0] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[0] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[0] >> (0*N)) & MASK] & M3);
-  y[1] = (Te4[(x[1] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[1] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[1] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[1] >> (0*N)) & MASK] & M3);
-  y[2] = (Te4[(x[2] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[2] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[2] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[2] >> (0*N)) & MASK] & M3);
-  y[3] = (Te4[(x[3] >> (3*N)) & MASK] & M0) ^
-         (Te4[(x[3] >> (2*N)) & MASK] & M1) ^
-         (Te4[(x[3] >> (1*N)) & MASK] & M2) ^
-         (Te4[(x[3] >> (0*N)) & MASK] & M3);
-  
-  memcpy(x, y, sizeof(state));
-}
-
-void SBInv(state x) {
-  state y;
-  y[0] = (Td4[(x[0] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[0] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[0] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[0] >> (0*N)) & MASK] & M3);
-  y[1] = (Td4[(x[1] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[1] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[1] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[1] >> (0*N)) & MASK] & M3);
-  y[2] = (Td4[(x[2] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[2] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[2] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[2] >> (0*N)) & MASK] & M3);
-  y[3] = (Td4[(x[3] >> (3*N)) & MASK] & M0) ^
-         (Td4[(x[3] >> (2*N)) & MASK] & M1) ^
-         (Td4[(x[3] >> (1*N)) & MASK] & M2) ^
-         (Td4[(x[3] >> (0*N)) & MASK] & M3);
-  
-  memcpy(x, y, sizeof(state));
-}
-
-void MC(state x) {
-  state y;
-  SRSBInv(x);
-  Round(x, y);
-  memcpy(x, y, sizeof(state));
-}
-
-void MCInv(state x) {
-  state y;
-  SRSB(x);
-  RoundInv(x, y);  
-  memcpy(x, y, sizeof(state));
-}
-
-
-void encrypt_N(state x, state *k, int rnd) {
-  for (int i=0; i<rnd; i++) {
-    state t;
-    AddKey(x,k[i]);
-    Round(x, t);
-    memcpy(x, t, sizeof(state));
-  }
-
-  AddKey(x,k[rnd]);
-}
-
-void encrypt(state x, state k[R+1]) {
-  encrypt_N(x, k, R);
-}
-
-void decrypt(state x, state k[R+1]) {
-  SRSB(x);
-  for (int i=R; i>0; i--) {
-    state t;
-    RoundInv(x, t);
-    AddKey(t,k[i]);
-    memcpy(x, t, sizeof(state));
-  }
-  SRSBInv(x);
-  AddKey(x,k[0]);
-}
-
+// Small-scale AES with T-table implementation
+// Note: state is column-oriented
+#include "small-aes.c"
 
 void print_state(state x) {
   for (int i=0; i<4; i++)
@@ -412,6 +224,7 @@ typedef struct {
   uint16_t i; // Plaintext index
 } data_p;
 
+// Comparison function for qsort, to detect collisions on antidiagonals 0 and 1
 int cmp_diag(const void *a, const void *b) {
   const data_p *A = a;
   const data_p *B = b;
@@ -439,9 +252,9 @@ int main() {
   srandom(time(NULL));
   state k[R+1];
   state kInv[R+1];
+  getrandom(k, sizeof(k), 0);
   for (int i=0; i<R+1; i++) {
     for (int j=0; j<4; j++) {
-      k[i][j] = random();
       kInv[i][j] = k[i][j];
     }
     if (i)
@@ -451,24 +264,25 @@ int main() {
   printf ("Secret key: k0 = %04x, k6 = %04x\n\n",
 	  extract_diag0(k[0]), extract_antidiag0(kInv[6]));
 
+#if 0
   /***********************************/
   /* Verify AES implementation       */
   /***********************************/
   
-  /* state x = {0,0,0,0}; */
-  /* print_state(x); */
-  /* encrypt(x, k); */
-  /* print_state(x); */
-  /* decrypt(x, kInv); */
-  /* print_state(x); */
+  state x = {0,0,0,0};
+  print_state(x);
+  encrypt(x, k);
+  print_state(x);
+  decrypt(x, kInv);
+  print_state(x);
 
-  /* state y = {0xdeadbeef,0,0,1}; */
-  /* print_state(y); */
-  /* encrypt(y, k); */
-  /* print_state(y); */
-  /* decrypt(y, kInv); */
-  /* print_state(y); */
-
+  state y = {0xdeadbeef,0,0,1};
+  print_state(y);
+  encrypt(y, k);
+  print_state(y);
+  decrypt(y, kInv);
+  print_state(y);
+#endif
 
   /***********************************/
   /* 6-round boomerang               */
@@ -477,29 +291,34 @@ int main() {
   candidates (*cand)[1ULL<<(4*N)] = precompute_candidates();
 
   int cnt = 0, cnd = 0;
-
+  unsigned long long complexity = 0;
+  
 #pragma omp parallel
+  // Use OpenMP for parallelization; allocate structures for each thread
   {
     data_p *struc = malloc(sizeof(struc[0])<<16);
     assert(struc);
   
+    // Key candidates $S_\ell$
     struct { int n; uint16_t k[1<<12]; } *S_cand = malloc(sizeof(S_cand[0])*4);
     assert(S_cand);
   
     struct { int n; uint16_t k[1<<12]; } *S_cand2 = malloc(sizeof(S_cand2[0])*4);
     assert(S_cand2);
    
-#pragma omp for
-    for (int tmp=0; tmp<65536; tmp++) {
+    // Iterate over structures untill key is recovered
+    while (1) {
+      // Unique structure number across threads
       int my_cnt = __atomic_fetch_add(&cnt,1,__ATOMIC_RELAXED);
       
-      // Build strucutre, and encrypt it
-      state x = {
-	random() & 0x0fff,
-	random() & 0xf0ff,
-	random() & 0xff0f,
-	random() & 0xfff0};
-    
+      // Build structure, and encrypt it
+      state x;
+      getrandom(x, sizeof(x), 0);
+      x[0] &= 0x0fff;
+      x[1] &= 0xf0ff;
+      x[2] &= 0xff0f;
+      x[3] &= 0xfff0;
+      
       for (int i=0; i<1<<16; i++) {
 	// Structure active on a diagonal
 	struc[i].i = i;
@@ -523,25 +342,21 @@ int main() {
 	     ((struc[i].c[3]^struc[i-1].c[3]) & 0x0ff0) == 0 &&
 	     ((struc[i].i^struc[i-1].i) & 0xf000) == 0) {
 
+	  // Unique candidate pair number across threads
 	  int my_cnd = __atomic_fetch_add(&cnd,1,__ATOMIC_RELAXED);
 #ifdef VERBOSE
+#pragma omp critical
 	  printf ("Candidate pair found [pair #%i, structure #%i]\n", my_cnd, my_cnt);
 #else
+#pragma omp critical
 	  printf ("\rCandidate pair found [pair #%4i, structure #%5i]", my_cnd, my_cnt);
 	  fflush(stdout);
 #endif
 	  
-	  // Plaintext/ciphertext
-	  state C0, C1, P0, P1;
+	  // Ciphertext pair
+	  state C0, C1;
 	  memcpy(C0, struc[i].c, sizeof(state));
 	  memcpy(C1, struc[i-1].c, sizeof(state));
-	  memcpy(P0, struc[i].c, sizeof(state));
-	  memcpy(P1, struc[i-1].c, sizeof(state));
-	  MC(P0);
-	  MC(P1);
-	  decrypt(P0, kInv);
-	  decrypt(P1, kInv);
-          
 
           
 #ifdef VERBOSE
@@ -573,36 +388,36 @@ int main() {
 	    	 ( extract_diag0(T0) == 0 ||
 	    	   extract_diag1(T0) == 0 ||
 	    	   extract_diag2(T0) == 0 ||
-	    	   extract_diag3(T0) == 0 ) ) {
-
-	      printf ("************************************************************\n"
-		      "Right pair!! (%04x)\n", Y0[0]^Y1[0]);
+	    	   extract_diag3(T0) == 0 ) )
+#pragma omp critical
+	      {
+		printf ("************************************************************\n"
+			"Right pair!! (%04x)\n", Y0[0]^Y1[0]);
 	      
-	      printf ("x = \n");
-	      print_state(x);
-	      printf ("\ni = %04x\np = \n", struc[i].i);
-	      print_state(X0);
-	      printf ("c = \n");
-	      print_state(struc[i].c);
-	      printf ("j = %04x\np = \n", struc[i-1].i);
-	      print_state(X1);
-	      printf ("c = \n");
-	      print_state(struc[i-1].c);
-	      printf("\n");
+		printf ("x = \n");
+		print_state(x);
+		printf ("\ni = %04x\np = \n", struc[i].i);
+		print_state(X0);
+		printf ("c = \n");
+		print_state(struc[i].c);
+		printf ("j = %04x\np = \n", struc[i-1].i);
+		print_state(X1);
+		printf ("c = \n");
+		print_state(struc[i-1].c);
+		printf("\n");
 
-	      print_pair(P0, P1, k);
+		print_pair(P0, P1, k);
 	      
-	      right = 1;
-	      if (extract_diag0(T0) == 0)
-		right_m = 0;
-	      if (extract_diag1(T0) == 0)
-		right_m = 3;
-	      if (extract_diag2(T0) == 0)
-		right_m = 2;
-	      if (extract_diag3(T0) == 0)
-		right_m = 1;
-	    }
-
+		right = 1;
+		if (extract_diag0(T0) == 0)
+		  right_m = 0;
+		if (extract_diag1(T0) == 0)
+		  right_m = 3;
+		if (extract_diag2(T0) == 0)
+		  right_m = 2;
+		if (extract_diag3(T0) == 0)
+		  right_m = 1;
+	      }
 	  }
 #endif	  
 
@@ -729,7 +544,7 @@ int main() {
                   // Build extra quartets
 		  // NOTE: we use more quartets than required to
 		  // remove false positives (the paper suggest
-		  // recovering over key bytes instead)
+		  // recovering other key bytes instead)
 		  struct { state p0; state p1; } xtraQ[12]; // plaintexts
                   for (unsigned i=0; i<tabsize(xtraQ); i++) {
                     state U, V;
@@ -738,7 +553,7 @@ int main() {
                     memcpy (U, C0, sizeof(state));
                     AddKey (U, K6);
                     RoundInv (U, V); // SRInv, SBInv, MCInv
-                    V[0] ^= (i+1)<<(12-4*m);
+                    V[0] ^= (i+1)<<(12-4*m); // Apply difference on byte m
                     MC (V);
                     SRSB (V);
                     AddKey (V, K6);
@@ -761,9 +576,13 @@ int main() {
 #endif
                   }
 
+		  // Local complexity counter
+		  unsigned long long my_complexity = 0;
+		  
 		  // Check key candidates
 		  for (int l=0; l<4; l++) {
 		    for (int kk=0; kk < S_cand2[l].n; kk++) {
+		      my_complexity++;
 		      // NOTE: we exhaustively try all k0[0],
 		      // instead of using linear algebra and the DDT
 		      // to directly recover the correct value
@@ -772,7 +591,7 @@ int main() {
 			word k0 = S_cand2[l].k[kk] + (ki<<12);
 			int good = 1;
 
-			for (int qq=0; qq<tabsize(xtraQ); qq++) {
+			for (unsigned qq=0; qq<tabsize(xtraQ); qq++) {
 			  state t, u, v;
 			  t[0] = xtraQ[qq].p0[0] ^ (k0 & 0xf000);
 			  t[1] = xtraQ[qq].p0[1] ^ (k0 & 0x0f00);
@@ -793,16 +612,25 @@ int main() {
 			  }
 			}
 
-			if (good) {
-			  printf ("\rKey candidate found! [candidate pair #%i, structure #%i]", my_cnd, my_cnt);
+			if (good)
+#pragma omp critical
+			  {
+			    my_complexity = __atomic_add_fetch(&complexity,my_complexity,__ATOMIC_RELAXED);
+
+			    printf ("\nKey candidate found! [candidate pair #%i, structure #%i, complexity: %llu]", my_cnd, my_cnt, my_complexity);
 #ifdef VERBOSE
-			  printf(" [right:%i] [right2:%i] [right3:%i]", right, right2, right3);
+			    printf(" [right:%i] [right2:%i] [right3:%i]", right, right2, right3);
 #endif
-			  printf ("\nk0 = %04x, k6 = %04x\n\n", k0, k6);
-			}
+			    printf ("\nk0 = %04x, k6 = %04x (%s KEY)\n\n", k0, k6,
+				    k0 == extract_diag0(k[0]) && k6 == extract_antidiag0(kInv[6])? "RIGHT" : "WRONG");
+			    exit(0);
+			  }
 		      }
 		    }
 		  }
+
+		  // Increment shared complexity counter
+		  __atomic_add_fetch(&complexity,my_complexity,__ATOMIC_RELAXED);
 		}
 	      }
 	    }
@@ -811,5 +639,4 @@ int main() {
       }
     }
   }
-  printf ("\n");
 }
